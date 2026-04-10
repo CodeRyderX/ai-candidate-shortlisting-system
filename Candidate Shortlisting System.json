@@ -1,0 +1,2235 @@
+{
+  "name": "Candidate Shortlisting System copy",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "authentication": "airtableTokenApi",
+        "baseId": {
+          "__rl": true,
+          "value": "appjo5MHiem97gBSb",
+          "mode": "id"
+        },
+        "tableId": {
+          "__rl": true,
+          "value": "tblTociGtnQ4UYBPK",
+          "mode": "id"
+        },
+        "triggerField": "Last Modified Time",
+        "additionalFields": {
+          "formula": "{Status} = 'Ready'"
+        }
+      },
+      "type": "n8n-nodes-base.airtableTrigger",
+      "typeVersion": 1,
+      "position": [
+        -3856,
+        192
+      ],
+      "id": "80179e84-72b7-4d63-8f1c-7714d68b9c55",
+      "name": "Airtable Trigger",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "yYt9fF0eimTovmm1",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d959e910-55f7-4189-bd3e-a325a7e5d07d",
+              "name": "search_query",
+              "value": "={{ $json.fields['Role Name'] }}",
+              "type": "string"
+            },
+            {
+              "id": "5e20db4f-f55f-4727-990b-4c15265828de",
+              "name": "location",
+              "value": "={{ $json.fields.Location }}",
+              "type": "string"
+            },
+            {
+              "id": "14b09586-31b0-4202-9160-823eba7c4640",
+              "name": "education",
+              "value": "={{ $json.fields.School }}",
+              "type": "string"
+            },
+            {
+              "id": "71a39f9e-f96c-4245-96ad-e23c614d136d",
+              "name": "years_of_experience",
+              "value": "={{ $json.fields['Years of Experience'] }}",
+              "type": "array"
+            },
+            {
+              "id": "1bf7b3e0-f43d-46d2-96f6-caa9af994d7d",
+              "name": "seniority_level",
+              "value": "={{ $json.fields['Seniority Level'] }}",
+              "type": "string"
+            },
+            {
+              "id": "75f0253d-f336-4c19-a719-d27d4a8cc8a1",
+              "name": "profile_language",
+              "value": "={{ $json.fields['Profile Language'] }}",
+              "type": "string"
+            },
+            {
+              "id": "271af568-c0c9-4af6-b8fd-93f951f9db76",
+              "name": "desired_number",
+              "value": "={{ $json.fields[\"Number of Desired Results\"] }}",
+              "type": "number"
+            },
+            {
+              "id": "d16a2756-976e-4151-9062-ac488f0bd116",
+              "name": "past_companies",
+              "value": "={{ $json.fields[\"Past Companies\"] }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -3136,
+        176
+      ],
+      "id": "b23ffd8b-f496-49d7-99fc-278c846c16ce",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "jsCode": "const experienceMap = {\n  \"Less than 1 year\": \"1\",\n  \"1 to 2 years\": \"2\",\n  \"3 to 5 years\": \"3\",\n  \"6 to 10 years\": \"4\",\n  \"More than 10 years\": \"5\"\n};\n\nconst seniorityMap = {\n  \"Intern\": \"100\",\n  \"Junior\": \"110\",\n  \"Senior\": \"120\",\n  \"Strategic\": \"130\",\n  \"Entry Level Manager\": \"200\",\n  \"Experienced Manager\": \"210\",\n  \"Director\": \"220\"\n};\n\nreturn items.map(item => {\n  const d = item.json;\n\n  // 1. Helper to clean arrays (removes nulls, undefined, and empty strings)\n  const toCleanArray = (val) => {\n    if (!val) return [];\n    let arr = Array.isArray(val) ? val : val.split(',').map(s => s.trim());\n    return arr.filter(s => s !== null && s !== undefined && s !== \"\");\n  };\n\n  // 2. Process Seniority (Handles stringified arrays, normal arrays, or single strings)\n  let sInput = d.seniority_level;\n  if (typeof sInput === 'string' && sInput.startsWith('[')) {\n    try { \n      sInput = JSON.parse(sInput); \n    } catch (e) { \n      sInput = toCleanArray(sInput.replace(/[\\[\\]\"]/g, '')); \n    }\n  } else {\n    sInput = toCleanArray(sInput);\n  }\n  \n  // Map labels to IDs and remove any that didn't map correctly or are null\n  const seniorityIds = (Array.isArray(sInput) ? sInput : [sInput])\n    .map(s => seniorityMap[s] || s)\n    .filter(s => s !== null && s !== undefined && s !== \"\");\n\n  // 3. Process Experience\n  const expInput = toCleanArray(d.years_of_experience);\n  const experienceIds = expInput\n    .map(e => experienceMap[e] || e)\n    .filter(e => e !== null && e !== undefined && e !== \"\");\n\n  // 4. Build the final output with strict null-safety\n  const payload = {\n    autoQuerySegmentation: false,\n    locations: d.location ? [d.location] : [],\n    maxItems: parseInt(d.desired_number) || 20,\n    pastCompanies: toCleanArray(d.past_companies),\n    profileScraperMode: \"Full\",\n    recentlyChangedJobs: false,\n    schools: toCleanArray(d.education),\n    searchQuery: d.search_query || \"\",\n    profileLanguage: d.profile_language || \"English\"\n  };\n\n  // Only add these keys if they have actual values to avoid Apify \"must be string\" errors\n  if (seniorityIds.length > 0) payload.seniorityLevelIds = seniorityIds;\n  if (experienceIds.length > 0) payload.yearsOfExperienceIds = experienceIds;\n\n  return { json: payload };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2928,
+        176
+      ],
+      "id": "81d45d32-bc87-4580-98cd-8dd498580beb",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appjo5MHiem97gBSb",
+          "mode": "list",
+          "cachedResultName": "Recruitment Base",
+          "cachedResultUrl": "https://airtable.com/appjo5MHiem97gBSb"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblKKEHTeGvDW9V0b",
+          "mode": "list",
+          "cachedResultName": "Output Table",
+          "cachedResultUrl": "https://airtable.com/appjo5MHiem97gBSb/tblKKEHTeGvDW9V0b"
+        },
+        "filterByFormula": "={LinkedIn URL} = '{{ $json.linkedinUrl }}'",
+        "options": {
+          "fields": [
+            "LinkedIn URL"
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        -2384,
+        192
+      ],
+      "id": "e47709e5-0254-45d2-af19-f8b54216d400",
+      "name": "Search records",
+      "alwaysOutputData": true,
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "yYt9fF0eimTovmm1",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "022778f5-8329-40c8-9e86-95b9b9ce0372",
+              "leftValue": "={{ $json[\"LinkedIn URL\"] }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1776,
+        176
+      ],
+      "id": "479b0a21-01a7-4e42-873f-1c683828db8a",
+      "name": "If",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "49abc472-0593-47cb-aca0-9300ebb0b710",
+              "name": "fullName",
+              "value": "={{ $('Run an Actor and get dataset').item.json.firstName }} {{ $('Run an Actor and get dataset').item.json.lastName }}",
+              "type": "string"
+            },
+            {
+              "id": "17d79c74-4d9c-4dab-bf19-f44b5ed14820",
+              "name": "linkedinUrl",
+              "value": "={{ $('Run an Actor and get dataset').item.json.linkedinUrl }}",
+              "type": "string"
+            },
+            {
+              "id": "2e780882-7534-4286-8815-5cad822175f8",
+              "name": "aboutBio",
+              "value": "={{ $('Run an Actor and get dataset').item.json.about }}",
+              "type": "string"
+            },
+            {
+              "id": "03e7d8e1-5eb4-484a-bb6d-bbe3ecc83d14",
+              "name": "headline",
+              "value": "={{ $('Run an Actor and get dataset').item.json.headline }}",
+              "type": "string"
+            },
+            {
+              "id": "66f7616a-3cae-4909-aff6-ea4e4def4308",
+              "name": "currentPosition",
+              "value": "={{ $json.currentPosition && $json.currentPosition.length > 0 && $json.currentPosition[0].position ? $json.currentPosition[0].position + \" at \" + $json.currentPosition[0].companyName : $json.headline }}",
+              "type": "string"
+            },
+            {
+              "id": "dde6e642-5325-4a5c-bfb4-87710f81780d",
+              "name": "experienceText",
+              "value": "={{ $json.experience.map(e => e.position + \" at \" + e.companyName + \" (\" + e.duration + \")\").join('; ') }}",
+              "type": "string"
+            },
+            {
+              "id": "73b32757-438b-4c74-bffd-f4d8721d5d25",
+              "name": "education",
+              "value": "={{ $json.education.map(e => e.degree + (e.fieldOfStudy ? \" in \" + e.fieldOfStudy : \"\") + \" from \" + e.schoolName).join('; ') }}",
+              "type": "string"
+            },
+            {
+              "id": "fa566ceb-c69d-4db7-9a12-6f45ae3c594b",
+              "name": "certifications",
+              "value": "={{ $json.certifications.map(c => c.title + \" by \" + c.issuedBy).join(', ') }}",
+              "type": "string"
+            },
+            {
+              "id": "6e917f7b-e1d0-4408-a65c-834e44527bea",
+              "name": "skills",
+              "value": "={{ $json.skills.map(s => s.name).join(', ') }}",
+              "type": "string"
+            },
+            {
+              "id": "a3c67e5f-62f4-45b8-a70e-4a85f661ce74",
+              "name": "honorsAndAwards",
+              "value": "={{ $json.honorsAndAwards.map(h => h.title + \" (\" + h.issuedBy + \")\").join('; ') }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "ignoreConversionErrors": false
+        }
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1536,
+        96
+      ],
+      "id": "9c713167-6b3d-4f0e-977c-1f9d8da237ba",
+      "name": "Set Fields",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "advanced": true,
+        "mergeByFields": {
+          "values": [
+            {
+              "field1": "linkedinUrl",
+              "field2": "LinkedIn URL"
+            }
+          ]
+        },
+        "joinMode": "enrichInput1",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -2032,
+        176
+      ],
+      "id": "8dad6b76-69a6-4853-9de5-a4ff3fb197d3",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4.1-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4.1-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -1440,
+        304
+      ],
+      "id": "14780c5e-1873-460e-a353-eefc31ce0bbe",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "ritKea4wFz5mMc6k",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"yearsOfExperience\": \"1year 3months\",\n  \"experienceSummary\": \"string\",\n  \"strengths\": \"string\",\n  \"weaknesses\": \"string\",\n  \"rewardFactor\": \"string\",\n  \"riskFactor\": \"string\",\n  \"overallFitScore\": 0.0,\n  \"verdict\": \"over-qualified/under-qualified/qualified\",\n  \"justification\": \"reason why you qualified them\"\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        -1152,
+        304
+      ],
+      "id": "a2f07798-4d52-4299-a9bd-365c193d1535",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "7557a511-c6e4-4530-ae09-448a2eeb172a",
+              "leftValue": "={{ $json.output.overallFitScore }}",
+              "rightValue": 7.5,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        -976,
+        96
+      ],
+      "id": "5354d779-3886-42f3-a948-3bc6335e0bea",
+      "name": "Filter"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4.1-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4.1-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -912,
+        304
+      ],
+      "id": "5eedeaa2-dadb-43ec-b0fb-29ecb5064ae5",
+      "name": "OpenAI Chat Model1",
+      "credentials": {
+        "openAiApi": {
+          "id": "ritKea4wFz5mMc6k",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n\t\"icebreaker\": \"full ice breaker message here\"\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        -592,
+        304
+      ],
+      "id": "80070732-6dc6-4f8a-aa2c-6aba00cd55fc",
+      "name": "Structured Output Parser1"
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "appjo5MHiem97gBSb",
+          "mode": "list",
+          "cachedResultName": "Recruitment Base",
+          "cachedResultUrl": "https://airtable.com/appjo5MHiem97gBSb"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblKKEHTeGvDW9V0b",
+          "mode": "list",
+          "cachedResultName": "Output Table",
+          "cachedResultUrl": "https://airtable.com/appjo5MHiem97gBSb/tblKKEHTeGvDW9V0b"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "LinkedIn URL": "={{ $('Set Fields').item.json.linkedinUrl }}",
+            "Full Name": "={{ $('Set Fields').item.json.fullName }}",
+            "Role Evaluated For": "={{ $('Airtable Trigger').item.json.fields[\"Role Name\"] }}",
+            "Current Role": "={{ $('Set Fields').item.json.currentPosition }}",
+            "Years of Experience": "={{ $('Filter').item.json.output.yearsOfExperience }}",
+            "Skills": "={{ $('Set Fields').item.json.skills }}",
+            "Strengths": "={{ $('Filter').item.json.output.strengths }}",
+            "Weaknesses": "={{ $('Filter').item.json.output.weaknesses }}",
+            "Reward Factor": "={{ $('Filter').item.json.output.rewardFactor }}",
+            "Risk Factor": "={{ $('Filter').item.json.output.riskFactor }}",
+            "Overall Fit Score": "={{ $('Filter').item.json.output.overallFitScore }}",
+            "Icebreaker Message": "={{ $json.output.icebreaker }}",
+            "Job Link": "={{ [ $item(0).$node[\"Airtable Trigger\"].json.id ] }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "LinkedIn URL",
+              "displayName": "LinkedIn URL",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Full Name",
+              "displayName": "Full Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Role Evaluated For",
+              "displayName": "Role Evaluated For",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Junior AI Developer",
+                  "value": "Junior AI Developer"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Current Role",
+              "displayName": "Current Role",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Years of Experience",
+              "displayName": "Years of Experience",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Skills",
+              "displayName": "Skills",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Strengths",
+              "displayName": "Strengths",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Weaknesses",
+              "displayName": "Weaknesses",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Reward Factor",
+              "displayName": "Reward Factor",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Risk Factor",
+              "displayName": "Risk Factor",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Overall Fit Score",
+              "displayName": "Overall Fit Score",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Icebreaker Message",
+              "displayName": "Icebreaker Message",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Current Status",
+              "displayName": "Current Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Weak Fit",
+                  "value": "Weak Fit"
+                },
+                {
+                  "name": "Strong Fit",
+                  "value": "Strong Fit"
+                },
+                {
+                  "name": "Contacted",
+                  "value": "Contacted"
+                },
+                {
+                  "name": "Conversation Ongoing",
+                  "value": "Conversation Ongoing"
+                },
+                {
+                  "name": "Rejected",
+                  "value": "Rejected"
+                },
+                {
+                  "name": "Hired",
+                  "value": "Hired"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Date Added",
+              "displayName": "Date Added",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Job Link",
+              "displayName": "Job Link",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        -416,
+        96
+      ],
+      "id": "2abf6010-77bf-4025-9ab8-52d05071be7c",
+      "name": "Create a record",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "yYt9fF0eimTovmm1",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "base": {
+          "__rl": true,
+          "value": "appjo5MHiem97gBSb",
+          "mode": "list",
+          "cachedResultName": "Recruitment Base",
+          "cachedResultUrl": "https://airtable.com/appjo5MHiem97gBSb"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblTociGtnQ4UYBPK",
+          "mode": "list",
+          "cachedResultName": "Input Table",
+          "cachedResultUrl": "https://airtable.com/appjo5MHiem97gBSb/tblTociGtnQ4UYBPK"
+        },
+        "id": "={{ $('Airtable Trigger').item.json.id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        96
+      ],
+      "id": "02dfb66e-06a9-4884-ae4f-4eade992bdc9",
+      "name": "Get a record",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "yYt9fF0eimTovmm1",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldsToSummarize": {
+          "values": [
+            {
+              "field": "id"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.summarize",
+      "typeVersion": 1.1,
+      "position": [
+        -208,
+        96
+      ],
+      "id": "6d334e1b-92ef-4e00-b064-063e8d65e624",
+      "name": "Summarize"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b10b0ca9-e766-4d0a-a953-a881f893f3f4",
+              "leftValue": "={{ $json[\"Current Qualified Count\"] }}",
+              "rightValue": "={{ $('Airtable Trigger').item.json.fields[\"Number of Desired Results\"] }}",
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            },
+            {
+              "id": "912a492b-091f-4ccf-8169-afac4e686e7c",
+              "leftValue": "={{ $('Airtable Trigger').item.json.fields['Attempts'] }}",
+              "rightValue": 5,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        208,
+        96
+      ],
+      "id": "5277e42c-4701-46fb-9c55-0a90e787989d",
+      "name": "If1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        416,
+        0
+      ],
+      "id": "7009e7cc-fd15-4a2a-81cc-4be92a7ca56e",
+      "name": "Wait",
+      "webhookId": "44588c06-c70f-470e-a633-fefb22d89ede"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appjo5MHiem97gBSb",
+          "mode": "list",
+          "cachedResultName": "Recruitment Base",
+          "cachedResultUrl": "https://airtable.com/appjo5MHiem97gBSb"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblTociGtnQ4UYBPK",
+          "mode": "list",
+          "cachedResultName": "Input Table",
+          "cachedResultUrl": "https://airtable.com/appjo5MHiem97gBSb/tblTociGtnQ4UYBPK"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Airtable Trigger').item.json.id }}",
+            "Status": "Done",
+            "Number of Desired Results": 0,
+            "Attempts": 0
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "Record ID",
+              "displayName": "Record ID",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Role Name",
+              "displayName": "Role Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Number of Desired Results",
+              "displayName": "Number of Desired Results",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Location",
+              "displayName": "Location",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "School",
+              "displayName": "School",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Seniority Level",
+              "displayName": "Seniority Level",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "options": [
+                {
+                  "name": "Intern",
+                  "value": "Intern"
+                },
+                {
+                  "name": "Junior",
+                  "value": "Junior"
+                },
+                {
+                  "name": "Senior",
+                  "value": "Senior"
+                },
+                {
+                  "name": "Strategic",
+                  "value": "Strategic"
+                },
+                {
+                  "name": "Entry Level Manager",
+                  "value": "Entry Level Manager"
+                },
+                {
+                  "name": "Experienced Manager",
+                  "value": "Experienced Manager"
+                },
+                {
+                  "name": "Director",
+                  "value": "Director"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Past Companies",
+              "displayName": "Past Companies",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Industry",
+              "displayName": "Industry",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Software Development",
+                  "value": "Software Development"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Profile Language",
+              "displayName": "Profile Language",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "English",
+                  "value": "English"
+                },
+                {
+                  "name": "Irish",
+                  "value": "Irish"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Current Job",
+              "displayName": "Current Job",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Years of Experience",
+              "displayName": "Years of Experience",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "options": [
+                {
+                  "name": "Less than 1 year",
+                  "value": "Less than 1 year"
+                },
+                {
+                  "name": "1 to 2 years",
+                  "value": "1 to 2 years"
+                },
+                {
+                  "name": "3 to 5 years",
+                  "value": "3 to 5 years"
+                },
+                {
+                  "name": "6 to 10 years",
+                  "value": "6 to 10 years"
+                },
+                {
+                  "name": "More than 10 years",
+                  "value": "More than 10 years"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Job Description",
+              "displayName": "Job Description",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Pending...",
+                  "value": "Pending..."
+                },
+                {
+                  "name": "Ready",
+                  "value": "Ready"
+                },
+                {
+                  "name": "Done",
+                  "value": "Done"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Last Modified Time",
+              "displayName": "Last Modified Time",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Current Qualified Count",
+              "displayName": "Current Qualified Count",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Attempts",
+              "displayName": "Attempts",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Output Table",
+              "displayName": "Output Table",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        416,
+        224
+      ],
+      "id": "3df51b16-6590-4118-9289-429593662d91",
+      "name": "Update record",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "yYt9fF0eimTovmm1",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "hQpEYppGIT3mREFZ",
+          "mode": "id",
+          "cachedResultUrl": "/workflow/hQpEYppGIT3mREFZ"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        816,
+        0
+      ],
+      "id": "ce5a0de4-7473-496a-bad7-c295608e1c10",
+      "name": "Call 'Candidate Shortlisting System'"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appjo5MHiem97gBSb",
+          "mode": "list",
+          "cachedResultName": "Recruitment Base",
+          "cachedResultUrl": "https://airtable.com/appjo5MHiem97gBSb"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblTociGtnQ4UYBPK",
+          "mode": "list",
+          "cachedResultName": "Input Table",
+          "cachedResultUrl": "https://airtable.com/appjo5MHiem97gBSb/tblTociGtnQ4UYBPK"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Airtable Trigger').item.json.id }}",
+            "Attempts": "={{ ($('Airtable Trigger').item.json.fields[\"Attempts\"] || 0) + 1 }}",
+            "Number of Desired Results": 0
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "Record ID",
+              "displayName": "Record ID",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Role Name",
+              "displayName": "Role Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Number of Desired Results",
+              "displayName": "Number of Desired Results",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Location",
+              "displayName": "Location",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "School",
+              "displayName": "School",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Seniority Level",
+              "displayName": "Seniority Level",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "options": [
+                {
+                  "name": "Intern",
+                  "value": "Intern"
+                },
+                {
+                  "name": "Junior",
+                  "value": "Junior"
+                },
+                {
+                  "name": "Senior",
+                  "value": "Senior"
+                },
+                {
+                  "name": "Strategic",
+                  "value": "Strategic"
+                },
+                {
+                  "name": "Entry Level Manager",
+                  "value": "Entry Level Manager"
+                },
+                {
+                  "name": "Experienced Manager",
+                  "value": "Experienced Manager"
+                },
+                {
+                  "name": "Director",
+                  "value": "Director"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Past Companies",
+              "displayName": "Past Companies",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Industry",
+              "displayName": "Industry",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Software Development",
+                  "value": "Software Development"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Profile Language",
+              "displayName": "Profile Language",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "English",
+                  "value": "English"
+                },
+                {
+                  "name": "Irish",
+                  "value": "Irish"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Current Job",
+              "displayName": "Current Job",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Years of Experience",
+              "displayName": "Years of Experience",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "options": [
+                {
+                  "name": "Less than 1 year",
+                  "value": "Less than 1 year"
+                },
+                {
+                  "name": "1 to 2 years",
+                  "value": "1 to 2 years"
+                },
+                {
+                  "name": "3 to 5 years",
+                  "value": "3 to 5 years"
+                },
+                {
+                  "name": "6 to 10 years",
+                  "value": "6 to 10 years"
+                },
+                {
+                  "name": "More than 10 years",
+                  "value": "More than 10 years"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Job Description",
+              "displayName": "Job Description",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Pending...",
+                  "value": "Pending..."
+                },
+                {
+                  "name": "Ready",
+                  "value": "Ready"
+                },
+                {
+                  "name": "Done",
+                  "value": "Done"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Last Modified Time",
+              "displayName": "Last Modified Time",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Current Qualified Count",
+              "displayName": "Current Qualified Count",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Attempts",
+              "displayName": "Attempts",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Output Table",
+              "displayName": "Output Table",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        624,
+        0
+      ],
+      "id": "490c8115-fd72-4092-9825-cb5a7b406104",
+      "name": "Update Attempts Count",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "yYt9fF0eimTovmm1",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b5af95ac-4a96-40aa-8f05-f4af140064db",
+              "leftValue": "={{ $json.fields.Status }}",
+              "rightValue": "Ready",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -3600,
+        192
+      ],
+      "id": "c95a832e-fa91-4eb1-853a-76024fa638e1",
+      "name": "If Status is Ready"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appjo5MHiem97gBSb",
+          "mode": "list",
+          "cachedResultName": "Recruitment Base",
+          "cachedResultUrl": "https://airtable.com/appjo5MHiem97gBSb"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblTociGtnQ4UYBPK",
+          "mode": "list",
+          "cachedResultName": "Input Table",
+          "cachedResultUrl": "https://airtable.com/appjo5MHiem97gBSb/tblTociGtnQ4UYBPK"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.id }}",
+            "Status": "Pending..."
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "Record ID",
+              "displayName": "Record ID",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Role Name",
+              "displayName": "Role Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Number of Desired Results",
+              "displayName": "Number of Desired Results",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Location",
+              "displayName": "Location",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "School",
+              "displayName": "School",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Seniority Level",
+              "displayName": "Seniority Level",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "options": [
+                {
+                  "name": "Intern",
+                  "value": "Intern"
+                },
+                {
+                  "name": "Junior",
+                  "value": "Junior"
+                },
+                {
+                  "name": "Senior",
+                  "value": "Senior"
+                },
+                {
+                  "name": "Strategic",
+                  "value": "Strategic"
+                },
+                {
+                  "name": "Entry Level Manager",
+                  "value": "Entry Level Manager"
+                },
+                {
+                  "name": "Experienced Manager",
+                  "value": "Experienced Manager"
+                },
+                {
+                  "name": "Director",
+                  "value": "Director"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Past Companies",
+              "displayName": "Past Companies",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Industry",
+              "displayName": "Industry",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Software Development",
+                  "value": "Software Development"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Profile Language",
+              "displayName": "Profile Language",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "English",
+                  "value": "English"
+                },
+                {
+                  "name": "Irish",
+                  "value": "Irish"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Current Job",
+              "displayName": "Current Job",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Years of Experience",
+              "displayName": "Years of Experience",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "options": [
+                {
+                  "name": "Less than 1 year",
+                  "value": "Less than 1 year"
+                },
+                {
+                  "name": "1 to 2 years",
+                  "value": "1 to 2 years"
+                },
+                {
+                  "name": "3 to 5 years",
+                  "value": "3 to 5 years"
+                },
+                {
+                  "name": "6 to 10 years",
+                  "value": "6 to 10 years"
+                },
+                {
+                  "name": "More than 10 years",
+                  "value": "More than 10 years"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Job Description",
+              "displayName": "Job Description",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Pending...",
+                  "value": "Pending..."
+                },
+                {
+                  "name": "Ready",
+                  "value": "Ready"
+                },
+                {
+                  "name": "Done",
+                  "value": "Done"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Last Modified Time",
+              "displayName": "Last Modified Time",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Current Qualified Count",
+              "displayName": "Current Qualified Count",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "Attempts",
+              "displayName": "Attempts",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Output Table",
+              "displayName": "Output Table",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        -3392,
+        176
+      ],
+      "id": "16bc704e-78a1-4b80-a696-8642ccc01c1a",
+      "name": "Update Status to Pending",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "yYt9fF0eimTovmm1",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "Run actor and get dataset",
+        "actorSource": "store",
+        "actorId": {
+          "__rl": true,
+          "value": "M2FMdjRVeF1HPGFcc",
+          "mode": "id"
+        },
+        "customBody": "=  {\n  \"autoQuerySegmentation\": false,\n  \"locations\": {{ $json.locations?.toJsonString() || \"[]\" }},\n  \"maxItems\": {{ $json.maxItems || 20 }},\n  \"pastCompanies\": {{ $json.pastCompanies?.toJsonString() || \"[]\" }},\n  \"profileScraperMode\": \"Full\",\n  \"schools\": {{ $json.schools?.toJsonString() || \"[]\" }},\n  \"searchQuery\": \"{{ $json.searchQuery }}\",\n  \"seniorityLevelIds\": {{ $json.seniorityLevelIds?.toJsonString() || \"[]\" }},\n  \"yearsOfExperienceIds\": {{ $json.yearsOfExperienceIds?.toJsonString() || \"[]\" }}\n  }",
+        "timeout": {}
+      },
+      "type": "@apify/n8n-nodes-apify.apify",
+      "typeVersion": 1,
+      "position": [
+        -2720,
+        176
+      ],
+      "id": "5db88bc9-6de3-459f-a089-04ea49b64c0b",
+      "name": "Run an Actor and get dataset",
+      "credentials": {
+        "apifyApi": {
+          "id": "cYJiHkV5EaVojogE",
+          "name": "Emmillio Apify Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=## Task\nYou are provided with a high-stakes job requirement and a candidate profile. You must evaluate the probability of a successful placement for this specific client and give a verdict whether they are under-qualified, qualified or over-qualified.\n\n## Client Requirements\n* Role Name: {{ $('Airtable Trigger').item.json.fields['Role Name'] ?? 'Not Specified' }}\n* Required Years of Experience: {{ $('Airtable Trigger').item.json.fields['Years of Experience'] ?? 'Not Specified' }}\n* Target Schools: {{ $('Airtable Trigger').item.json.fields['School'] ?? 'None Specified' }}\n* Target Companies: {{ $('Airtable Trigger').item.json.fields['Past Companies'] ?? 'None Specified' }}\n* Target Industry/Industries: {{ $('Airtable Trigger').item.json.fields['Industry'] ?? 'Not Specified' }}\n* Job Description: {{ $('Airtable Trigger').item.json.fields['Job Description'] ?? 'No JD provided' }}\n\n## Candidate Data\n* Name: {{ $json.fullName ?? 'Unknown' }}\n* Current Role: {{ $json.currentPosition ?? 'Not Listed' }}\n* Headline: {{ $json.headline ?? 'No Headline' }}\n* Experience: {{ $json.experienceText ?? 'No Experience Data' }}\n* Education: {{ $json.education ?? 'No Education Data' }}\n* Skills: {{ $json.skills ?? 'No Skills Data' }}\n* Certifications: {{ $json.certifications ?? 'No Certifications' }}\n* Awards: {{ $json.honorsAndAwards ?? 'No Awards' }}\n\n## Required JSON Format\n{\n  \"yearsOfExperience\": 1year 3months,\n  \"experienceSummary\": \"Executive summary of experience relevant to this specific Role Name\",\n  \"strengths\": \"List of core strengths matching the JD\",\n  \"weaknesses\": \"Specific gaps in skills, industry, or company pedigree\",\n  \"rewardFactor\": \"The unique value proposition of this candidate that justifies the fee\",\n  \"riskFactor\": \"Objectively state reasons for potential interview failure or flight risk\",\n  \"overallFitScore\": 0.0,\n  \"verdict\": \"over-qualified/under-qualified/qualified\",\n  \"justification\": \"reason why you qualified them\"\n}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=## Overview\n\nYou are an Elite Executive Search Auditor for a premier recruitment agency. Every evaluation you perform directly impacts business revenue, with candidate placements valued between £30,000 and £60,000. Your goal is to determine if a candidate is a high-probability placement or a waste of the consultant's time.\n\n\n## Tools\n\nYou must cross-reference the Candidate Data against the specific requirements provided in the Airtable Trigger (Target Experience, Target Schools, and Role Name). You are the gatekeeper of quality.\n\n\n## Output\nOutput MUST be a single, valid JSON object. Do not include any text outside the JSON.\n\n\n## Rules\n* No Euphemisms: If a candidate is a poor fit, say so. This is a revenue-driven environment.\n* Evidence-Based: Every strength or weakness must be backed by a specific line from the candidate's history.\n* Revenue Focus: Prioritize candidates who have \"Blue Chip\" or \"Target Company\" experience if the client requested it.\n* Strict Calculation: Calculate years of experience mathematically. For example, If the user asks for 5 years and they have 4.5, they are under-qualified OR If the user asks for 5 years and the candidate has 6, they are qualified but if they have over 6.25, they are over-qualified. So, only allow 0.25 years of experience if they are lower than what is specified and 1.25 if their years of experience is higher.\n\n\n## Crucial\nThe client's \"Target Schools\" and \"Past Companies\" are non-negotiable filters ONLY WHEN SPECIFIED OR PROVIDED. If the candidate does not any have these, their fit score must reflect the discrepancy regardless of how \"good\" their bio sounds."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -1328,
+        96
+      ],
+      "id": "4ca92e6d-fd37-4de1-a1e8-d8cd2a4633df",
+      "name": "Candidate Verdict Agent"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=## Task\n\nWrite a hyper-personalised LinkedIn connection request of not over 250 characters and not.\n\n## Context\n* Candidate Name: {{ $('Set Fields').item.json.fullName }}\n* Target Role: {{ $('Airtable Trigger').item.json.fields['Role Name'] }}\n* Auditor's Reward Factor: {{ $json.output.rewardFactor }}\n* Key Strength: {{ $json.output.strengths }}\n\n\n## Instructions\n\nReference their specific career path or a recent change or pivot or something unique like a skill that seems personal e.g music or anyhting reasonable that can evoke a sense of familiarity through similarity. Connect their background directly to why they are a win for this specific role. Keep it punchy.\n\nUse this template: \n\"Hey/Hi/ {first name}, big fan of/noticed {interesting thing}, {short compliment}. Thought I'd connect/reach out seeing that your/you're/you  {reference to experience or honours or certification } and your key strengths in {strength} really stands out/{some short compliment}. Cheers\"",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=## Overview\n\nYou are a High-Stakes Headhunter Copywriter. Your goal is to convert a high-tier candidate into a conversation. You are writing to elite talent who receive dozens of messages a day.\n\n\n## Rules\n\n* **No AI Phrases:** Never use \"Zero-Lead-Left-Behind,\" \"Golden Window,\" or generic praise.\n* **No Quotes:** Never wrap the candidate's achievements or titles in quotes.\n* **Strict Length:** Maximum 300 characters (LinkedIn's limit).\n* **Tone:** Professional, peer-to-peer, and direct. No \"fluff.\"\n\n\n## Crucial\n\n- You must use the \"Reward Factor\" and \"Strengths\" generated by the previous Auditor node to prove you actually know who they are.\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -768,
+        96
+      ],
+      "id": "0e73fa75-df54-4391-a865-2a78b46c521a",
+      "name": "Icebreaker Message Generator",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "content": "## Check Status and Update\nEnsures that tasks that are already run do not re-run unless specified.\n\nOnly Tasks in Status Ready Runs",
+        "height": 320,
+        "width": 352
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -3632,
+        0
+      ],
+      "id": "7a1d5185-ef4a-42f3-9c46-42abbabb9700",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## Transforms the Data and sends it to LinkedIn Scraper to Search for Candidates\nTransforms data to valid Apify Scraper input JSON format",
+        "height": 320,
+        "width": 608,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -3168,
+        0
+      ],
+      "id": "a7fa50a1-aac6-402f-86de-3535aa1e1526",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "## Deduplicates Candidates that have already being entered into the System\nSearches Airtable and compares it with Candidates gotten from LinkedIn then merge node combins only non-matching fields which is candidates who aren't in the Airtable database\n",
+        "height": 352,
+        "width": 832,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -2464,
+        0
+      ],
+      "id": "222cd47e-e9be-4a4b-834b-66225f6eb666",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "## Scores the Candidates, Filter only the high-ranking ones and generates Human-Like LinkedIn icebreaker messages",
+        "height": 512,
+        "width": 944,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1424,
+        -48
+      ],
+      "id": "dc2e22fc-d572-406b-b8ce-060c082390d1",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "content": "## Adds the candidate to database and checks if the amount matches the required amount set by the user\n** If it's less than the required amount, it runs again until completed**",
+        "height": 544,
+        "width": 1536,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -432,
+        -80
+      ],
+      "id": "fdbb2f01-7081-48de-975e-e1d4d28e64c5",
+      "name": "Sticky Note4"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Airtable Trigger": {
+      "main": [
+        [
+          {
+            "node": "If Status is Ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Run an Actor and get dataset",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search records": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Set Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Fields": {
+      "main": [
+        [
+          {
+            "node": "Candidate Verdict Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Candidate Verdict Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Candidate Verdict Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter": {
+      "main": [
+        [
+          {
+            "node": "Icebreaker Message Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Icebreaker Message Generator",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser1": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Icebreaker Message Generator",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a record": {
+      "main": [
+        [
+          {
+            "node": "Summarize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize": {
+      "main": [
+        [
+          {
+            "node": "Get a record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get a record": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Update Attempts Count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Status is Ready": {
+      "main": [
+        [
+          {
+            "node": "Update Status to Pending",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Status to Pending": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run an Actor and get dataset": {
+      "main": [
+        [
+          {
+            "node": "Search records",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Candidate Verdict Agent": {
+      "main": [
+        [
+          {
+            "node": "Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Icebreaker Message Generator": {
+      "main": [
+        [
+          {
+            "node": "Create a record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "9ae8a25c-df9b-447c-ad66-125e97a38d32",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "408ecb7859ffb0e2cb83857bf326ddaeebbc5d47d49c0fe5dad30d291182c9b2"
+  },
+  "id": "tU8EvU9Jdr46vJlR",
+  "tags": []
+}
